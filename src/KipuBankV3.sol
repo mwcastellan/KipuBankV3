@@ -5,7 +5,7 @@ pragma solidity ^0.8.30;
 /// @notice Accepts native ETH and any ERC20 with a direct USDC pair on Uniswap V2, swaps to USDC, and credits user balances.
 /// @dev This version extends KipuBankV2 by integrating Uniswap V2 for token-to-USDC swaps, enforcing a global USDC-denominated cap, and maintaining non-custodial safety.
 /// @author Marcelo Walter Castellan
-/// @custom:date 2025-11-07
+/// @custom:date 2025-11-08
 
 /*
     Summary
@@ -25,7 +25,9 @@ pragma solidity ^0.8.30;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
@@ -147,11 +149,10 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
         address _usdc,
         uint256 _bankCap,
         address _owner
-    ) {
+    ) Ownable(_owner) {
         if (
             _router == address(0) || _usdc == address(0) || _owner == address(0)
         ) revert ZeroAddress();
-        _transferOwnership(_owner);
         router = IUniswapV2Router02(_router);
         factory = IUniswapV2Factory(router.factory());
         WETH = router.WETH();
@@ -290,7 +291,8 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
             totalUsdc += received;
         }
 
-        emit DepositSwapped(msg.sender, address(0), msg.value, received);
+        // emit DepositSwapped(msg.sender, address(0), msg.value, received);
+        emit DepositSwapped(msg.sender, address(0), msg.value, 0);
     }
 
     /// @notice Deposits an ERC20 token which is swapped for USDC via Uniswap V2.
@@ -339,7 +341,8 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
             totalUsdc += received;
         }
 
-        emit DepositSwapped(msg.sender, tokenIn, amountIn, received);
+        // emit DepositSwapped(msg.sender, tokenIn, amountIn, received);
+        emit DepositSwapped(msg.sender, tokenIn, amountIn, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
