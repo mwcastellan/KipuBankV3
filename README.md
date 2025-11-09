@@ -119,7 +119,7 @@ cast call <direccion_contrato> "getBalance(address)" <tu_wallet>
 ### Herramientas
 - **Foundry (`forge test`)**
 - **LCOV y cobertura de gas (`forge coverage`)**
-- **Análisis: https://kipubankv3lcov.vercel.app/
+- **Análisis: https://kipubankv3lcov.vercel.app/**
 
 ### Alcance de pruebas
 - Depósitos ETH y tokens.
