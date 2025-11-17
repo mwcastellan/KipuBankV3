@@ -11,3 +11,12 @@ Corrección 1:
 8) (OK) Tienes multiples accesos a variables de estado como por ejemplo pero sin limitarnos a s_userBalances[msg.sender][_tokenAddress] (esto es un error grave y causa suficiente incluso para no aprobar esta instancia)
 
 Por favor ten en cuenta todos estos errores para arreglarlos para la etapa de recuperación. Saludos
+----------------------------
+Cristian Marchese - lun., 17 de nov. de 2025, 15:58
+- Se pudo usar modifier para nonZeroWithdrawal o onlySufficientBalance. Aún no se corrigió.
+- Tienes multiples accesos a variables de estado. por ejemplo totalUsdc
+- La documentacion es bastante completa aunque te faltó documentar como hacer un withdraw, está el deposit pero no el withdraw. También la documentación del coverage.
+
+El programa está muy bien comparado con el anterior fue un salto gigante. Sin embargo no puedo aprobarte teniendo multiples accesos a variables de estado. Si estos hubieras estado medianaente escondidos podría haberlos dejado pasarpero están a simple vista. Corregí esos que estan a simple vista y el trabajo estará aprobado.
+
+Igual te felicito por la mejora!!!
