@@ -1,0 +1,13 @@
+Corrección 1:
+1) (OK) natspec incompleto.  Corregido en el tp anterior.
+2) (OK) se pudo usar modifier para nonZeroWithdrawal o onlySufficientBalance. Aún no se corrigió.
+3) (OK) Hay cuentas que no hace falta el checkeo de overflow/underflows por lo que pudiste usar unchecked. Esto tampoco se corrigió.
+4) (OK) Los comentarios están en castellano en vez de estar en ingles. (esto fue lo unico que se corrigió)
+----------------------------
+5) (OK) error KipuBank__OracleFailed(string reason); => La razón justamente es KipuBank__OracleFailed... para eso es el customError para dar la razon con el nombre. Esto es un error de concepto y produce un gasto inecesario de gas. 
+6) (OK) KipuBank__WithdrawalLimitExceeded => Para que le mandas una variable immutable? esa variable no se puede modificar, siempre mostrará lo mismo. Esto es un gasto innecesario de gas y no está bien hacerlo.
+7) (OK) No usas el unchecked cuando corresponde para evitar dobles checkeos de desbordes innecesarios. como por ejemplo: s_userBalances[msg.sender][NATIVE_TOKEN] += msg.value;
+(entro otros)
+8) (OK) Tienes multiples accesos a variables de estado como por ejemplo pero sin limitarnos a s_userBalances[msg.sender][_tokenAddress] (esto es un error grave y causa suficiente incluso para no aprobar esta instancia)
+
+Por favor ten en cuenta todos estos errores para arreglarlos para la etapa de recuperación. Saludos
