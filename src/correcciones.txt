@@ -23,5 +23,3 @@ Cristian Marchese - lun., 17 de nov. de 2025, 15:58
 El programa está muy bien comparado con el anterior fue un salto gigante. Sin embargo no puedo aprobarte teniendo multiples accesos a variables de estado. Si estos hubieras estado medianaente escondidos podría haberlos dejado pasarpero están a simple vista. Corregí esos que estan a simple vista y el trabajo estará aprobado.
 
 Igual te felicito por la mejora!!!
-
-
