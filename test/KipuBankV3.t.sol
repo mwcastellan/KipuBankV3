@@ -90,10 +90,10 @@ contract KipuBankV3Test is Test {
 
     // -------- Constructor / estado inicial --------
     function testInitialState() public {
-        assertEq(address(bank.router()), address(router));
-        assertEq(address(bank.usdc()), address(USDC));
-        assertEq(bank.bankCap(), CAP);
-        assertTrue(bank.WETH() == address(WETH));
+        assertEq(address(bank.sRouter()), address(router));
+        assertEq(address(bank.sUsdc()), address(USDC));
+        assertEq(bank.sBankCap(), CAP);
+        assertTrue(bank.I_WETH() == address(WETH));
     }
 
     // -------- hasDirectUsdcPair / helpers --------
@@ -118,8 +118,8 @@ contract KipuBankV3Test is Test {
         emit DepositUsdc(alice, amt);
         bank.depositUsdc(amt);
 
-        assertEq(bank.balanceOfUsdc(alice), amt);
-        assertEq(bank.totalUsdc(), amt);
+        assertEq(bank.sBalanceOfUsdc(alice), amt);
+        assertEq(bank.sTotalUsdc(), amt);
         assertEq(USDC.balanceOf(address(bank)), amt);
     }
 
@@ -151,8 +151,8 @@ contract KipuBankV3Test is Test {
 
         uint256 received = USDC.balanceOf(address(bank)) - usdcBefore;
         assertEq(received, 6_000e6);
-        assertEq(bank.balanceOfUsdc(alice), received);
-        assertEq(bank.totalUsdc(), received);
+        assertEq(bank.sBalanceOfUsdc(alice), received);
+        assertEq(bank.sTotalUsdc(), received);
     }
 
     function testDepositEth_Revert_Slippage() public {
@@ -192,8 +192,8 @@ contract KipuBankV3Test is Test {
             block.timestamp + 1 hours
         );
 
-        assertEq(bank.balanceOfUsdc(alice), 2_000e6);
-        assertEq(bank.totalUsdc(), 2_000e6);
+        assertEq(bank.sBalanceOfUsdc(alice), 2_000e6);
+        assertEq(bank.sTotalUsdc(), 2_000e6);
         assertEq(USDC.balanceOf(address(bank)), 2_000e6);
     }
 
@@ -207,8 +207,8 @@ contract KipuBankV3Test is Test {
             block.timestamp + 1 hours
         );
 
-        assertEq(bank.balanceOfUsdc(alice), 70_000e6);
-        assertEq(bank.totalUsdc(), 70_000e6);
+        assertEq(bank.sBalanceOfUsdc(alice), 70_000e6);
+        assertEq(bank.sTotalUsdc(), 70_000e6);
     }
 
     function testDepositToken_Revert_Unsupported_NoPair() public {
@@ -270,8 +270,8 @@ contract KipuBankV3Test is Test {
         emit WithdrawUsdc(alice, 500e6, bob);
         bank.withdrawUsdc(500e6, bob);
 
-        assertEq(bank.balanceOfUsdc(alice), 1_500e6);
-        assertEq(bank.totalUsdc(), 1_500e6);
+        assertEq(bank.sBalanceOfUsdc(alice), 1_500e6);
+        assertEq(bank.sTotalUsdc(), 1_500e6);
         assertEq(USDC.balanceOf(bob), 500e6);
     }
 
@@ -328,7 +328,7 @@ contract KipuBankV3Test is Test {
         vm.expectEmit(true, true, false, true);
         emit USDCUpdated(address(USDC), address(NEWUSDC));
         bank.setUsdc(address(NEWUSDC));
-        assertEq(address(bank.usdc()), address(NEWUSDC));
+        assertEq(address(bank.sUsdc()), address(NEWUSDC));
 
         // setRouter (cambia factory/WETH indirectamente en prod; aquí solo evento)
         MockUniswapV2Router02 newRouter = new MockUniswapV2Router02(
@@ -338,14 +338,14 @@ contract KipuBankV3Test is Test {
         vm.expectEmit(true, true, false, true);
         emit RouterUpdated(address(router), address(newRouter));
         bank.setRouter(address(newRouter));
-        assertEq(address(bank.router()), address(newRouter));
+        assertEq(address(bank.sRouter()), address(newRouter));
 
         // setBankCap
         vm.prank(owner);
         vm.expectEmit(false, false, false, true);
         emit BankCapUpdated(CAP, CAP + 1);
         bank.setBankCap(CAP + 1);
-        assertEq(bank.bankCap(), CAP + 1);
+        assertEq(bank.sBankCap(), CAP + 1);
     }
 
     // -------- rescueERC20 --------

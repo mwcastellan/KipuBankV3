@@ -12,7 +12,7 @@ pragma solidity ^0.8.30;
 	    Users can deposit: ETH, USDC, or any ERC20 with a direct USDC pair
 	    Non-USDC deposits are swapped to USDC via Uniswap V2 router
 	    Balances are kept internally in USDC units (token amounts, 6 decimals)
-	    A global `s_bankCap` (in USDC) limits the total USDC under custody
+	    A global `sBankCap` (in USDC) limits the total USDC under custody
 	
     Owner retains admin controls and can pause operations
 	    Reentrancy protection and SafeERC20 are used for safety
@@ -25,11 +25,19 @@ pragma solidity ^0.8.30;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
-import {IUniswapV2Factory} from "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
+import {
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    IUniswapV2Router02
+} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
+import {
+    IUniswapV2Factory
+} from "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 
 /// @dev Main DeFi banking contract allowing deposits in ETH or ERC20 tokens swapped to USDC via Uniswap V2.
 contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
@@ -111,25 +119,25 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Uniswap V2 router instance used for swaps.
-    IUniswapV2Router02 public s_router;
+    IUniswapV2Router02 public sRouter;
 
     /// @notice Uniswap V2 factory instance derived from the router.
-    IUniswapV2Factory public s_factory;
+    IUniswapV2Factory public sFactory;
 
     /// @notice Wrapped ETH (WETH) address used by Uniswap.
-    address public immutable i_WETH;
+    address public immutable I_WETH;
 
     /// @notice Address of the USDC token used as the unit of account.
-    address public s_usdc;
+    address public sUsdc;
 
     /// @notice Mapping of user addresses to their USDC-denominated balances.
-    mapping(address => uint256) public s_balanceOfUsdc;
+    mapping(address => uint256) public sBalanceOfUsdc;
 
     /// @notice Total USDC currently held by the contract.
-    uint256 public s_totalUsdc;
+    uint256 public sTotalUsdc;
 
     /// @notice maximum cap of total USDC allowed under custody.
-    uint256 public s_bankCap;
+    uint256 public sBankCap;
 
     /*//////////////////////////////////////////////////////////////
                                 Modifiers
@@ -143,7 +151,7 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
 
     /// @dev Ensures the user has sufficient USDC balance for a withdrawal.
     modifier onlySufficientBalance(address user, uint256 amount) {
-        if (s_balanceOfUsdc[user] < amount) revert InsufficientBalance();
+        if (sBalanceOfUsdc[user] < amount) revert InsufficientBalance();
         _;
     }
 
@@ -165,11 +173,11 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
             _router == address(0) || _usdc == address(0) || _owner == address(0)
         ) revert ZeroAddress();
         IUniswapV2Router02 _routerInstance = IUniswapV2Router02(_router);
-        s_router = _routerInstance;
-        s_factory = IUniswapV2Factory(_routerInstance.factory());
-        i_WETH = _routerInstance.WETH();
-        s_usdc = _usdc;
-        s_bankCap = _bankCap;
+        sRouter = _routerInstance;
+        sFactory = IUniswapV2Factory(_routerInstance.factory());
+        I_WETH = _routerInstance.WETH();
+        sUsdc = _usdc;
+        sBankCap = _bankCap;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -180,14 +188,14 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     /// @param _token Token address to check.
     /// @return bool True if a direct USDC pair exists.
     function hasDirectUsdcPair(address _token) public view returns (bool) {
-        return s_factory.getPair(_token, s_usdc) != address(0);
+        return sFactory.getPair(_token, sUsdc) != address(0);
     }
 
     /// @notice Returns remaining USDC capacity until reaching the global cap.
     /// @return uint256 Remaining capacity in USDC units.
     function remainingCapacity() external view returns (uint256) {
-        uint256 _totalUsdc = s_totalUsdc;
-        uint256 _bankCap = s_bankCap;
+        uint256 _totalUsdc = sTotalUsdc;
+        uint256 _bankCap = sBankCap;
         if (_totalUsdc >= _bankCap) return 0;
         return _bankCap - _totalUsdc;
     }
@@ -201,10 +209,10 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     /// @param _router New router address.
     function setRouter(address _router) external onlyOwner {
         if (_router == address(0)) revert ZeroAddress();
-        address _old = address(s_router);
+        address _old = address(sRouter);
         IUniswapV2Router02 _newRouter = IUniswapV2Router02(_router);
-        s_router = _newRouter;
-        s_factory = IUniswapV2Factory(_newRouter.factory());
+        sRouter = _newRouter;
+        sFactory = IUniswapV2Factory(_newRouter.factory());
         emit RouterUpdated(_old, _router);
     }
 
@@ -212,16 +220,16 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     /// @param _usdc New USDC token address.
     function setUsdc(address _usdc) external onlyOwner {
         if (_usdc == address(0)) revert ZeroAddress();
-        address _old = s_usdc;
-        s_usdc = _usdc;
+        address _old = sUsdc;
+        sUsdc = _usdc;
         emit USDCUpdated(_old, _usdc);
     }
 
     /// @notice Updates the global USDC bank cap.
     /// @param _cap New bank cap in USDC units.
     function setBankCap(uint256 _cap) external onlyOwner {
-        uint256 _old = s_bankCap;
-        s_bankCap = _cap;
+        uint256 _old = sBankCap;
+        sBankCap = _cap;
         emit BankCapUpdated(_old, _cap);
     }
 
@@ -263,18 +271,18 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     ) external whenNotPaused nonReentrant {
         if (_amountUsdc == 0) revert ZeroAmount();
 
-        uint256 _totalUsdc = s_totalUsdc;
-        uint256 _bankCap = s_bankCap;
+        uint256 _totalUsdc = sTotalUsdc;
+        uint256 _bankCap = sBankCap;
         uint256 _newTotal = _totalUsdc + _amountUsdc;
         if (_newTotal > _bankCap) revert CapExceeded();
 
-        address _usdc = s_usdc;
+        address _usdc = sUsdc;
         IERC20(_usdc).safeTransferFrom(msg.sender, address(this), _amountUsdc);
 
-        uint256 _newBalanceOfUsdc = s_balanceOfUsdc[msg.sender] + _amountUsdc;
+        uint256 _newBalanceOfUsdc = sBalanceOfUsdc[msg.sender] + _amountUsdc;
         unchecked {
-            s_balanceOfUsdc[msg.sender] = _newBalanceOfUsdc;
-            s_totalUsdc = _newTotal;
+            sBalanceOfUsdc[msg.sender] = _newBalanceOfUsdc;
+            sTotalUsdc = _newTotal;
         }
 
         emit DepositUsdc(msg.sender, _amountUsdc);
@@ -290,20 +298,20 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     ) external payable whenNotPaused nonReentrant {
         if (msg.value == 0) revert ZeroAmount();
 
-        uint256 _totalUsdc = s_totalUsdc;
-        uint256 _bankCap = s_bankCap;
+        uint256 _totalUsdc = sTotalUsdc;
+        uint256 _bankCap = sBankCap;
         if (_totalUsdc + _minUsdcOut > _bankCap) revert CapExceeded();
 
-        address _usdc = s_usdc;
-        address _WETH = i_WETH;
+        address _usdc = sUsdc;
+        address _weth = I_WETH;
 
         uint256 _usdcBefore = IERC20(_usdc).balanceOf(address(this));
 
         address[] memory path = new address[](2);
-        path[0] = _WETH;
+        path[0] = _weth;
         path[1] = _usdc;
 
-        IUniswapV2Router02 _router = s_router;
+        IUniswapV2Router02 _router = sRouter;
         _router.swapExactETHForTokens{value: msg.value}(
             _minUsdcOut,
             path,
@@ -318,10 +326,10 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
         // Final cap assertion with the actual output
         if (_newTotal > _bankCap) revert CapExceeded();
 
-        uint256 _newBalanceOfUsdc = s_balanceOfUsdc[msg.sender] + _received;
+        uint256 _newBalanceOfUsdc = sBalanceOfUsdc[msg.sender] + _received;
         unchecked {
-            s_balanceOfUsdc[msg.sender] = _newBalanceOfUsdc;
-            s_totalUsdc = _newTotal;
+            sBalanceOfUsdc[msg.sender] = _newBalanceOfUsdc;
+            sTotalUsdc = _newTotal;
         }
 
         emit DepositSwapped(msg.sender, address(0), msg.value, _received);
@@ -340,19 +348,19 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
         uint256 _deadline
     ) external whenNotPaused nonReentrant {
         if (_tokenIn == address(0)) revert ZeroAddress();
-        address _usdc = s_usdc;
+        address _usdc = sUsdc;
         if (_tokenIn == _usdc) revert UnsupportedToken(); // use depositUsdc
         if (_amountIn == 0) revert ZeroAmount();
         if (!hasDirectUsdcPair(_tokenIn)) revert UnsupportedToken();
-        uint256 _totalUsdc = s_totalUsdc;
-        uint256 _bankCap = s_bankCap;
+        uint256 _totalUsdc = sTotalUsdc;
+        uint256 _bankCap = sBankCap;
         uint256 _newTotalm = _totalUsdc + _minUsdcOut;
         if (_newTotalm > _bankCap) revert CapExceeded();
 
         // Pull tokens in first
         IERC20(_tokenIn).safeTransferFrom(msg.sender, address(this), _amountIn);
         // Approve router (reset to 0 first to satisfy some ERC20s)
-        IUniswapV2Router02 _router = s_router;
+        IUniswapV2Router02 _router = sRouter;
         IERC20(_tokenIn).forceApprove(address(_router), 0);
         IERC20(_tokenIn).forceApprove(address(_router), _amountIn);
 
@@ -371,15 +379,15 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
         );
 
         uint256 _usdcAfter = IERC20(_usdc).balanceOf(address(this));
-        uint256 _balanceOfUsdc = s_balanceOfUsdc[msg.sender] +
+        uint256 _balanceOfUsdc = sBalanceOfUsdc[msg.sender] +
             _usdcAfter -
             _usdcBefore;
 
         uint256 _newTotal = _totalUsdc + _usdcAfter - _usdcBefore;
         if (_newTotal > _bankCap) revert CapExceeded();
         unchecked {
-            s_balanceOfUsdc[msg.sender] = _balanceOfUsdc;
-            s_totalUsdc = _newTotal;
+            sBalanceOfUsdc[msg.sender] = _balanceOfUsdc;
+            sTotalUsdc = _newTotal;
         }
 
         // emit DepositSwapped(msg.sender, tokenIn, amountIn, received);
@@ -406,16 +414,16 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
     {
         if (_to == address(0)) revert ZeroAddress();
 
-        uint256 _totalUsdc = s_totalUsdc;
+        uint256 _totalUsdc = sTotalUsdc;
         uint256 _newTotal = _totalUsdc - _amountUsdc;
 
-        uint256 _bal = s_balanceOfUsdc[msg.sender];
+        uint256 _bal = sBalanceOfUsdc[msg.sender];
         unchecked {
-            s_balanceOfUsdc[msg.sender] = _bal - _amountUsdc;
-            s_totalUsdc = _newTotal;
+            sBalanceOfUsdc[msg.sender] = _bal - _amountUsdc;
+            sTotalUsdc = _newTotal;
         }
 
-        address _usdc = s_usdc;
+        address _usdc = sUsdc;
         IERC20(_usdc).safeTransfer(_to, _amountUsdc);
 
         emit WithdrawUsdc(msg.sender, _amountUsdc, _to);
