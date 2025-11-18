@@ -431,3 +431,4 @@ contract KipuBankV3 is Ownable, Pausable, ReentrancyGuard {
         revert UsedepositEth();
     }
 }
+
