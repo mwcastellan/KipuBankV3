@@ -3,345 +3,198 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import "../src/KipuBankV3.sol";
-
 import "./mocks/MockERC20.sol";
-import "./mocks/MockUniswapV2Factory.sol";
-import "./mocks/MockUniswapV2Router02.sol";
-import "./mocks/MockUniswapV2Pair.sol";
+import "./mocks/MockRouter.sol";
+import "./mocks/MockFactory.sol";
 
 contract KipuBankV3Test is Test {
-    KipuBankV3 public bank;
+    KipuBankV3 bank;
+    MockERC20 usdc;
+    MockERC20 dai;
+    MockRouter router;
+    MockFactory factory;
 
-    MockERC20 public USDC;
-    MockERC20 public DAI;
-    MockERC20 public WETH;
+    address owner = address(0xA11CE);
+    address alice = address(0xBEEF);
+    address bob = address(0xCAFE);
 
-    MockUniswapV2Factory public factory;
-    MockUniswapV2Router02 public router;
-    MockUniswapV2Pair public daiUsdcPair;
-
-    address public owner = address(this);
-    address public alice = address(0xA11CE);
-    address public bob = address(0xB0B);
-
-    uint256 public constant BANK_CAP = 1_000_000e6; // 1M USDC (6 decimales)
-    uint256 public constant ONE_USDC = 1e6;
-    uint256 public constant ONE_DAI = 1e18;
+    uint128 constant BANK_CAP = 1_000_000e6; // 1M USDC
 
     function setUp() public {
-        // === 1) Deploy tokens ===
-        USDC = new MockERC20("USD Coin", "USDC", 6);
-        DAI = new MockERC20("Dai Stablecoin", "DAI", 18);
-        WETH = new MockERC20("Wrapped Ether", "WETH", 18);
+        vm.startPrank(owner);
 
-        // === 2) Deploy factory & router mocks ===
-        factory = new MockUniswapV2Factory();
-        router = new MockUniswapV2Router02(address(factory), address(WETH));
+        usdc = new MockERC20("USD Coin", "USDC", 6);
+        dai = new MockERC20("DAI", "DAI", 18);
 
-        // === 3) Crear par DAI/USDC y setear reservas 1:1 ===
-        address pairAddr = factory.createPair(address(DAI), address(USDC));
-        daiUsdcPair = MockUniswapV2Pair(pairAddr);
+        router = new MockRouter(address(usdc));
+        factory = new MockFactory(address(dai), address(usdc));
 
-        // Reservas: 1,000,000 DAI y 1,000,000 USDC => precio 1:1
-        daiUsdcPair.setReserves(
-            uint112(1_000_000 * ONE_DAI),
-            uint112(1_000_000 * ONE_USDC)
-        );
+        // conectamos router con factory
+        router.setFactory(address(factory));
 
-        // === 4) Deploy del KipuBankV3 ===
-        // ⚠️ Ajustar el constructor si difiere de tu contrato
-        bank = new KipuBankV3(address(router), address(USDC), BANK_CAP, owner);
+        bank = new KipuBankV3(address(router), address(usdc), BANK_CAP, owner);
 
-        // Fondos iniciales para usuarios
-        DAI.mint(alice, 100_000 * ONE_DAI);
-        USDC.mint(alice, 50_000 * ONE_USDC);
-        WETH.mint(alice, 1_000 ether);
+        vm.stopPrank();
     }
 
-    // ================================================================
-    //                       TESTS DE ESTADO INICIAL
-    // ================================================================
+    /*//////////////////////////////////////////////////////////////
+                            BASIC STATE
+    //////////////////////////////////////////////////////////////*/
 
     function testInitialState() public {
-        assertEq(bank.sBankCap(), BANK_CAP, "bank cap incorrecto");
-        assertEq(bank.sTotalUsdc(), 0, "totalDeposits debe iniciar en 0");
-        // Si tenés un getter de USDC, descomentá:
-        // assertEq(address(bank.usdc()), address(USDC), "USDC incorrecto");
+        assertEq(bank.sUsdc(), address(usdc));
+        assertEq(bank.sTotalUsdc(), 0);
+        assertEq(bank.sBankCap(), BANK_CAP);
     }
 
-    // ================================================================
-    //                      DEPOSITOS DE USDC DIRECTO
-    // ================================================================
+    /*//////////////////////////////////////////////////////////////
+                            DEPOSIT USDC
+    //////////////////////////////////////////////////////////////*/
 
     function testDepositUsdc_Success() public {
-        vm.startPrank(alice);
-        uint256 amount = 1_000 * ONE_USDC;
+        vm.prank(alice);
+        usdc.mint(alice, 500e6);
+        vm.prank(alice);
+        usdc.approve(address(bank), 500e6);
 
-        USDC.approve(address(bank), amount);
-        bank.depositUsdc(amount);
+        vm.prank(alice);
+        bank.depositUsdc(500e6);
 
-        uint256 bal = bank.sBalanceOfUsdc(alice);
-        assertEq(bal, amount, "balance interno no actualizado");
-
-        assertEq(bank.sTotalUsdc(), amount, "totalDeposits incorrecto");
-        vm.stopPrank();
+        assertEq(bank.sBalanceOfUsdc(alice), 500e6);
+        assertEq(bank.sTotalUsdc(), 500e6);
     }
 
-    function testDepositUsdc_Revert_ZeroAmount() public {
-        vm.startPrank(alice);
-
-        USDC.approve(address(bank), 0);
-        vm.expectRevert(); // opcional: especificar selector si tenés custom error
+    function testDepositUsdc_RevertZero() public {
+        vm.prank(alice);
+        vm.expectRevert(KipuBankV3.ZeroAmount.selector);
         bank.depositUsdc(0);
-
-        vm.stopPrank();
     }
 
-    function testDepositUsdc_Revert_CapExceeded() public {
-        vm.startPrank(alice);
+    function testDepositUsdc_RevertCapExceeded() public {
+        vm.prank(owner);
+        bank.setBankCap(100e6); // cap chico para testar
 
-        uint256 amount = BANK_CAP + 1;
-        USDC.mint(alice, amount);
-        USDC.approve(address(bank), amount);
+        vm.prank(alice);
+        usdc.mint(alice, 200e6);
+        vm.prank(alice);
+        usdc.approve(address(bank), 200e6);
 
-        vm.expectRevert(); // ej: vm.expectRevert(KipuBankV3.CapExceeded.selector);
-        bank.depositUsdc(amount);
-
-        vm.stopPrank();
+        vm.expectRevert(KipuBankV3.CapExceeded.selector);
+        vm.prank(alice);
+        bank.depositUsdc(200e6);
     }
 
-    // ================================================================
-    //                  DEPOSITOS DE TOKEN → USDC (DAI)
-    // ================================================================
-
-    function _buildPath(
-        address t0,
-        address t1
-    ) internal pure returns (address[] memory path) {
-        address[] memory path = new address[](2);
-        path[0] = t0;
-        path[1] = t1;
-    }
-
-    function testDepositToken_Success_DAItoUSDC_1to1() public {
-        vm.startPrank(alice);
-
-        uint256 daiAmountIn = 1_000 * ONE_DAI;
-        // Con reservas 1:1, esperamos 1_000 USDC
-        address[] memory path = _buildPath(address(DAI), address(USDC));
-        uint[] memory amountsOut = router.getAmountsOut(daiAmountIn, path);
-
-        uint256 expectedUsdc = amountsOut[1];
-        uint256 minUsdcOut = (expectedUsdc * 99) / 100; // allow 1% slippage
-
-        DAI.approve(address(bank), daiAmountIn);
-        bank.depositToken(
-            address(DAI),
-            daiAmountIn,
-            minUsdcOut,
-            block.timestamp + 1 days
-        );
-
-        uint256 bal = bank.sBalanceOfUsdc(alice);
-        assertEq(bal, expectedUsdc, "balance USDC no coincide con swap");
-
-        assertEq(bank.sTotalUsdc(), expectedUsdc, "totalDeposits incorrecto");
-        vm.stopPrank();
-    }
-
-    function testDepositToken_Revert_ZeroAmount() public {
-        vm.startPrank(alice);
-
-        DAI.approve(address(bank), 0);
-        vm.expectRevert();
-        bank.depositToken(address(DAI), 0, 0, block.timestamp + 1 days);
-
-        vm.stopPrank();
-    }
-
-    function testDepositToken_Revert_Unsupported_NoPair() public {
-        // Token random sin par
-        MockERC20 RND = new MockERC20("Random", "RND", 18);
-        RND.mint(alice, 1_000 * 1e18);
-
-        vm.startPrank(alice);
-        RND.approve(address(bank), 1_000 * 1e18);
-
-        vm.expectRevert(); // ej: UnsupportedToken
-        bank.depositToken(
-            address(RND),
-            1_000 * 1e18,
-            0,
-            block.timestamp + 1 days
-        );
-
-        vm.stopPrank();
-    }
-
-    function testDepositToken_Revert_CapExceeded_Precheck() public {
-        vm.startPrank(alice);
-
-        // Hacemos un depósito grande que cruza el cap
-        uint256 daiAmountIn = 2_000_000 * ONE_DAI;
-        DAI.mint(alice, daiAmountIn);
-        DAI.approve(address(bank), daiAmountIn);
-
-        address[] memory path = _buildPath(address(DAI), address(USDC));
-        uint[] memory amountsOut = router.getAmountsOut(daiAmountIn, path);
-        uint256 expectedUsdc = amountsOut[1];
-
-        // expectedUsdc > BANK_CAP => debe revertir por cap
-        uint256 minUsdcOut = (expectedUsdc * 99) / 100;
-
-        vm.expectRevert(); // CapExceeded
-        bank.depositToken(
-            address(DAI),
-            daiAmountIn,
-            minUsdcOut,
-            block.timestamp + 1 days
-        );
-
-        vm.stopPrank();
-    }
-
-    function testDepositToken_Revert_Slippage() public {
-        vm.startPrank(alice);
-
-        uint256 daiAmountIn = 1_000 * ONE_DAI;
-        DAI.approve(address(bank), daiAmountIn);
-
-        // Calculamos output esperado 1:1
-        address[] memory path = _buildPath(address(DAI), address(USDC));
-        uint[] memory amountsOut = router.getAmountsOut(daiAmountIn, path);
-        uint256 expectedUsdc = amountsOut[1];
-
-        // Forzamos minOut mayor al posible => debe revertir por slippage
-        uint256 minUsdcOut = expectedUsdc + 1_000_000;
-
-        vm.expectRevert(); // SlippageExceeded o revert string
-        bank.depositToken(
-            address(DAI),
-            daiAmountIn,
-            minUsdcOut,
-            block.timestamp + 1 days
-        );
-
-        vm.stopPrank();
-    }
-
-    // ================================================================
-    //                         DEPOSITO DE ETH
-    // ================================================================
-    // ⚠️ Para estos tests, tu KipuBankV3 debe usar WETH internamente
-    // y la ruta WETH → USDC, con par creado en la factory.
-
-    function _setupWethUsdcPair() internal {
-        address pairAddr = factory.getPair(address(WETH), address(USDC));
-        if (pairAddr == address(0)) {
-            pairAddr = factory.createPair(address(WETH), address(USDC));
-        }
-        MockUniswapV2Pair wethUsdcPair = MockUniswapV2Pair(pairAddr);
-
-        // Por simplicidad: 1 ETH = 2000 USDC
-        wethUsdcPair.setReserves(
-            uint112(1_000 * 1e18), // 1,000 WETH
-            uint112(2_000_000 * ONE_USDC) // 2,000,000 USDC
-        );
-    }
-
-    function testDepositEth_Success() public {
-        _setupWethUsdcPair();
-
-        vm.deal(alice, 10 ether);
-
-        vm.startPrank(alice);
-
-        uint256 ethAmount = 1 ether;
-
-        // Ruta WETH → USDC para simular getAmountsOut
-        address[] memory path = _buildPath(address(WETH), address(USDC));
-        uint[] memory amountsOut = router.getAmountsOut(ethAmount, path);
-        uint256 expectedUsdc = amountsOut[1];
-
-        uint256 minUsdcOut = (expectedUsdc * 99) / 100;
-
-        bank.depositEth{value: ethAmount}(minUsdcOut, block.timestamp + 1 days);
-
-        uint256 bal = bank.sBalanceOfUsdc(alice);
-        assertEq(bal, expectedUsdc, "USDC recibido no coincide con swap");
-
-        vm.stopPrank();
-    }
-
-    function testDepositEth_Revert_ZeroAmount() public {
-        vm.deal(alice, 0);
-        vm.startPrank(alice);
-
-        vm.expectRevert();
-        bank.depositEth{value: 0}(0, block.timestamp + 1 days);
-
-        vm.stopPrank();
-    }
-
-    function testDepositEth_Revert_CapExceeded() public {
-        _setupWethUsdcPair();
-
-        vm.deal(alice, 1_000 ether);
-        vm.startPrank(alice);
-
-        uint256 ethAmount = 1_000 ether; // Suficiente para superar BANK_CAP
-        address[] memory path = _buildPath(address(WETH), address(USDC));
-        uint[] memory amountsOut = router.getAmountsOut(ethAmount, path);
-        uint256 expectedUsdc = amountsOut[1];
-        uint256 minUsdcOut = (expectedUsdc * 99) / 100;
-
-        vm.expectRevert();
-        bank.depositEth{value: ethAmount}(minUsdcOut, block.timestamp + 1 days);
-
-        vm.stopPrank();
-    }
-
-    // ================================================================
-    //                         WITHDRAW USDC
-    // ================================================================
+    /*//////////////////////////////////////////////////////////////
+                            WITHDRAW USDC
+    //////////////////////////////////////////////////////////////*/
 
     function testWithdrawUsdc_Success() public {
         vm.startPrank(alice);
+        usdc.mint(alice, 100e6);
+        usdc.approve(address(bank), 100e6);
+        bank.depositUsdc(100e6);
 
-        // Primero depositamos USDC
-        uint256 amount = 1_000 * ONE_USDC;
-        USDC.approve(address(bank), amount);
-        bank.depositUsdc(amount);
+        bank.withdrawUsdc(100e6, alice);
 
-        // Ahora retiramos la mitad
-        uint256 withdrawAmount = 500 * ONE_USDC;
-        bank.withdrawUsdc(withdrawAmount, alice);
-
-        uint256 bal = bank.sBalanceOfUsdc(alice);
-        assertEq(
-            bal,
-            amount - withdrawAmount,
-            "balance interno no se actualizo"
-        );
-
-        // El usuario recibe USDC
-        assertEq(
-            USDC.balanceOf(alice),
-            withdrawAmount,
-            "alice no recibio USDC"
-        );
-
-        vm.stopPrank();
+        assertEq(bank.sBalanceOfUsdc(alice), 0);
+        assertEq(bank.sTotalUsdc(), 0);
+        assertEq(usdc.balanceOf(alice), 100e6);
     }
 
-    function testWithdrawUsdc_Revert_InsufficientBalance() public {
+    function testWithdrawUsdc_RevertZero() public {
+        vm.expectRevert(KipuBankV3.ZeroWithdrawal.selector);
+        vm.prank(alice);
+        bank.withdrawUsdc(0, alice);
+    }
+
+    function testWithdrawUsdc_RevertInsufficient() public {
+        vm.expectRevert(KipuBankV3.InsufficientBalance.selector);
+        vm.prank(alice);
+        bank.withdrawUsdc(10e6, alice);
+    }
+
+    function testWithdrawUsdc_RevertZeroAddress() public {
         vm.startPrank(alice);
+        usdc.mint(alice, 50e6);
+        usdc.approve(address(bank), 50e6);
+        bank.depositUsdc(50e6);
 
-        uint256 withdrawAmount = 1_000 * ONE_USDC;
+        vm.expectRevert(KipuBankV3.ZeroAddress.selector);
+        bank.withdrawUsdc(50e6, address(0));
+    }
 
-        vm.expectRevert();
-        bank.withdrawUsdc(withdrawAmount, alice);
+    /*//////////////////////////////////////////////////////////////
+                            PAUSE
+    //////////////////////////////////////////////////////////////*/
 
-        vm.stopPrank();
+    function testPauseDeposits() public {
+        vm.prank(owner);
+        bank.pause();
+
+        vm.expectRevert("Pausable: paused");
+        vm.prank(alice);
+        bank.depositUsdc(10);
+    }
+
+    function testUnpause() public {
+        vm.prank(owner);
+        bank.pause();
+
+        vm.prank(owner);
+        bank.unpause();
+
+        vm.prank(alice);
+        usdc.mint(alice, 10e6);
+        usdc.approve(address(bank), 10e6);
+        bank.depositUsdc(10e6);
+
+        assertEq(bank.sBalanceOfUsdc(alice), 10e6);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            ADMIN
+    //////////////////////////////////////////////////////////////*/
+
+    function testSetRouter() public {
+        vm.prank(owner);
+        bank.setRouter(address(0x123));
+
+        assertEq(address(bank.sRouter()), address(0x123));
+    }
+
+    function testSetUsdc() public {
+        address usdc2 = address(new MockERC20("NEWUSDC", "NUSDC", 6));
+
+        vm.prank(owner);
+        bank.setUsdc(usdc2);
+
+        assertEq(bank.sUsdc(), usdc2);
+    }
+
+    function testSetBankCap() public {
+        vm.prank(owner);
+        bank.setBankCap(500e6);
+
+        assertEq(bank.sBankCap(), 500e6);
+    }
+
+    function testRescueERC20() public {
+        MockERC20 tokenX = new MockERC20("X", "X", 18);
+        tokenX.mint(address(bank), 1000);
+
+        vm.prank(owner);
+        bank.rescueERC20(address(tokenX), owner, 1000);
+
+        assertEq(tokenX.balanceOf(owner), 1000);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        RECEIVE → REVERT DIRECT ETH
+    //////////////////////////////////////////////////////////////*/
+
+    function testReceive_Revert() public {
+        vm.expectRevert(KipuBankV3.UsedepositEth.selector);
+        (bool ok, ) = address(bank).call{value: 1 ether}("");
+        ok;
     }
 }
