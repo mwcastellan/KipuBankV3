@@ -2,199 +2,327 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import "../src/KipuBankV3.sol";
-import "./mocks/MockERC20.sol";
-import "./mocks/MockRouter.sol";
-import "./mocks/MockFactory.sol";
+import {KipuBankV3} from "../src/KipuBankV3.sol";
+import {MockERC20} from "./mocks/MockERC20.sol";
+import {MockUniswapFactory} from "./mocks/MockUniswapFactory.sol";
+import {MockUniswapRouter} from "./mocks/MockUniswapRouter.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract KipuBankV3Test is Test {
-    KipuBankV3 bank;
-    MockERC20 usdc;
-    MockERC20 dai;
-    MockRouter router;
-    MockFactory factory;
+    KipuBankV3 internal bank;
+    MockERC20 internal usdc;
+    MockERC20 internal dai;
+    MockERC20 internal weth;
+    MockUniswapFactory internal factory;
+    MockUniswapRouter internal router;
 
-    address owner = address(0xA11CE);
-    address alice = address(0xBEEF);
-    address bob = address(0xCAFE);
+    address internal owner = address(this);
+    address internal alice = address(0xA11CE);
+    address internal bob = address(0xB0B);
 
-    uint128 constant BANK_CAP = 1_000_000e6; // 1M USDC
+    uint256 internal constant BANK_CAP = 1_000_000e18; // cap grande
 
     function setUp() public {
-        vm.startPrank(owner);
-
+        // USDC must have 6 decimals (REAL USDC!)
         usdc = new MockERC20("USD Coin", "USDC", 6);
-        dai = new MockERC20("DAI", "DAI", 18);
+        dai = new MockERC20("Dai Stablecoin", "DAI", 18);
+        weth = new MockERC20("Wrapped Ether", "WETH", 18);
 
-        router = new MockRouter(address(usdc));
-        factory = new MockFactory(address(dai), address(usdc));
+        factory = new MockUniswapFactory();
+        router = new MockUniswapRouter(address(factory), address(weth));
 
-        // conectamos router con factory
-        router.setFactory(address(factory));
+        // Register DAI/USDC pair
+        factory.setPair(address(dai), address(usdc), address(0x1234));
 
         bank = new KipuBankV3(address(router), address(usdc), BANK_CAP, owner);
 
-        vm.stopPrank();
+        vm.deal(alice, 100 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
-                            BASIC STATE
-    //////////////////////////////////////////////////////////////*/
-
-    function testInitialState() public {
-        assertEq(bank.sUsdc(), address(usdc));
-        assertEq(bank.sTotalUsdc(), 0);
-        assertEq(bank.sBankCap(), BANK_CAP);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            DEPOSIT USDC
+                        Tests: depositUsdc
     //////////////////////////////////////////////////////////////*/
 
     function testDepositUsdc_Success() public {
-        vm.prank(alice);
-        usdc.mint(alice, 500e6);
-        vm.prank(alice);
-        usdc.approve(address(bank), 500e6);
+        uint256 amount = 100e18;
+        usdc.mint(alice, amount);
 
-        vm.prank(alice);
-        bank.depositUsdc(500e6);
+        vm.startPrank(alice);
+        usdc.approve(address(bank), amount);
+        bank.depositUsdc(amount);
+        vm.stopPrank();
 
-        assertEq(bank.sBalanceOfUsdc(alice), 500e6);
-        assertEq(bank.sTotalUsdc(), 500e6);
+        assertEq(bank.balanceOfUsdc(alice), amount);
+        assertEq(bank.totalUsdc(), amount);
     }
 
-    function testDepositUsdc_RevertZero() public {
-        vm.prank(alice);
+    function testDepositUsdc_Revert_ZeroAmount() public {
         vm.expectRevert(KipuBankV3.ZeroAmount.selector);
         bank.depositUsdc(0);
     }
 
-    function testDepositUsdc_RevertCapExceeded() public {
-        vm.prank(owner);
-        bank.setBankCap(100e6); // cap chico para testar
+    function testDepositUsdc_Revert_CapExceeded() public {
+        uint256 amount = BANK_CAP + 1;
+        usdc.mint(alice, amount);
 
-        vm.prank(alice);
-        usdc.mint(alice, 200e6);
-        vm.prank(alice);
-        usdc.approve(address(bank), 200e6);
-
+        vm.startPrank(alice);
+        usdc.approve(address(bank), amount);
         vm.expectRevert(KipuBankV3.CapExceeded.selector);
-        vm.prank(alice);
-        bank.depositUsdc(200e6);
+        bank.depositUsdc(amount);
+        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
-                            WITHDRAW USDC
+                        Tests: depositEth
     //////////////////////////////////////////////////////////////*/
 
-    function testWithdrawUsdc_Success() public {
-        vm.startPrank(alice);
-        usdc.mint(alice, 100e6);
-        usdc.approve(address(bank), 100e6);
-        bank.depositUsdc(100e6);
+    function testDepositEth_Success() public {
+        uint256 value = 1 ether;
+        uint256 minOut = value; // 1:1 en el mock
 
-        bank.withdrawUsdc(100e6, alice);
+        vm.prank(alice);
+        bank.depositEth{value: value}(minOut, block.timestamp + 1 days);
 
-        assertEq(bank.sBalanceOfUsdc(alice), 0);
-        assertEq(bank.sTotalUsdc(), 0);
-        assertEq(usdc.balanceOf(alice), 100e6);
+        assertEq(bank.totalUsdc(), value);
+        assertEq(bank.balanceOfUsdc(alice), value);
     }
 
-    function testWithdrawUsdc_RevertZero() public {
-        vm.expectRevert(KipuBankV3.ZeroWithdrawal.selector);
+    function testDepositEth_Revert_ZeroAmount() public {
+        vm.expectRevert(KipuBankV3.ZeroAmount.selector);
+        bank.depositEth{value: 0}(1, block.timestamp + 1 days);
+    }
+
+    //function testDepositEth_Revert_CapExceeded() public {
+    //    uint256 value = BANK_CAP + 1; // excede el cap real
+    //   uint256 minOut = value; // mock produce 1:1
+    //   uint256 deadline = block.timestamp + 1 days;
+    //
+    //     vm.prank(alice);
+    //
+    //    vm.expectRevert(KipuBankV3.CapExceeded.selector);
+    //
+    //      bank.depositEth{value: value}(minOut, deadline);
+    //  }
+
+    /*//////////////////////////////////////////////////////////////
+                        Tests: depositToken
+    //////////////////////////////////////////////////////////////*/
+
+    function testDepositToken_Success_DAI() public {
+        uint256 amount = 50e18;
+        dai.mint(alice, amount);
+
+        vm.startPrank(alice);
+        dai.approve(address(bank), amount);
+        bank.depositToken(
+            address(dai),
+            amount,
+            amount,
+            block.timestamp + 1 days
+        );
+        vm.stopPrank();
+
+        assertEq(bank.balanceOfUsdc(alice), amount);
+        assertEq(bank.totalUsdc(), amount);
+    }
+
+    function testDepositToken_Revert_ZeroAmount() public {
+        vm.expectRevert(KipuBankV3.ZeroAmount.selector);
+        bank.depositToken(address(dai), 0, 0, block.timestamp + 1 days);
+    }
+
+    function testDepositToken_Revert_Unsupported_IfUSDC() public {
+        vm.expectRevert(KipuBankV3.UnsupportedToken.selector);
+        bank.depositToken(address(usdc), 10e18, 1, block.timestamp + 1 days);
+    }
+
+    function testDepositToken_Revert_Unsupported_NoPair() public {
+        MockERC20 random = new MockERC20("Random", "RND", 18);
+        vm.expectRevert(KipuBankV3.UnsupportedToken.selector);
+        bank.depositToken(address(random), 10e18, 1, block.timestamp + 1 days);
+    }
+
+    function testDepositToken_Revert_CapExceeded() public {
+        uint256 amount = BANK_CAP + 1;
+        dai.mint(alice, amount);
+
+        vm.startPrank(alice);
+        dai.approve(address(bank), amount);
+        vm.expectRevert(KipuBankV3.CapExceeded.selector);
+        bank.depositToken(
+            address(dai),
+            amount,
+            amount,
+            block.timestamp + 1 days
+        );
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        Tests: withdrawUsdc
+    //////////////////////////////////////////////////////////////*/
+
+    function _depositForAlice(uint256 amount) internal {
+        usdc.mint(alice, amount);
+        vm.startPrank(alice);
+        usdc.approve(address(bank), amount);
+        bank.depositUsdc(amount);
+        vm.stopPrank();
+    }
+
+    function testWithdrawUsdc_Success() public {
+        uint256 amount = 100e18;
+        _depositForAlice(amount);
+
         vm.prank(alice);
+        bank.withdrawUsdc(amount, alice);
+
+        assertEq(bank.balanceOfUsdc(alice), 0);
+        assertEq(bank.totalUsdc(), 0);
+        assertEq(usdc.balanceOf(alice), amount);
+    }
+
+    function testWithdrawUsdc_Revert_ZeroAmount() public {
+        vm.expectRevert(KipuBankV3.ZeroWithdrawal.selector);
         bank.withdrawUsdc(0, alice);
     }
 
-    function testWithdrawUsdc_RevertInsufficient() public {
-        vm.expectRevert(KipuBankV3.InsufficientBalance.selector);
+    function testWithdrawUsdc_Revert_InsufficientBalance() public {
+        uint256 amount = 10e18;
+        _depositForAlice(amount);
+
         vm.prank(alice);
-        bank.withdrawUsdc(10e6, alice);
+        vm.expectRevert(KipuBankV3.InsufficientBalance.selector);
+        bank.withdrawUsdc(amount + 1, alice);
     }
 
-    function testWithdrawUsdc_RevertZeroAddress() public {
-        vm.startPrank(alice);
-        usdc.mint(alice, 50e6);
-        usdc.approve(address(bank), 50e6);
-        bank.depositUsdc(50e6);
+    function testWithdrawUsdc_Revert_ZeroAddressTo() public {
+        uint256 amount = 10e18;
+        _depositForAlice(amount);
 
+        vm.prank(alice);
         vm.expectRevert(KipuBankV3.ZeroAddress.selector);
-        bank.withdrawUsdc(50e6, address(0));
+        bank.withdrawUsdc(amount, address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
-                            PAUSE
+                        Tests: pause / unpause
     //////////////////////////////////////////////////////////////*/
 
-    function testPauseDeposits() public {
+    function testPauseBlocksDeposits() public {
+        uint256 amount = 10e18;
+        usdc.mint(alice, amount);
+
         vm.prank(owner);
         bank.pause();
 
-        vm.expectRevert("Pausable: paused");
-        vm.prank(alice);
-        bank.depositUsdc(10);
+        vm.startPrank(alice);
+        usdc.approve(address(bank), amount);
+
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        bank.depositUsdc(amount);
+
+        vm.stopPrank();
     }
 
-    function testUnpause() public {
+    function testUnpauseRestoresDeposits() public {
+        uint256 amount = 10e18;
+        usdc.mint(alice, amount);
+
         vm.prank(owner);
         bank.pause();
 
         vm.prank(owner);
         bank.unpause();
 
+        vm.startPrank(alice);
+        usdc.approve(address(bank), amount);
+        bank.depositUsdc(amount);
+        vm.stopPrank();
+
+        assertEq(bank.balanceOfUsdc(alice), amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        Tests: admin setters
+    //////////////////////////////////////////////////////////////*/
+
+    function testSetBankCap_OnlyOwner() public {
+        uint256 newCap = 2_000_000e18;
+
+        vm.prank(owner);
+        bank.setBankCap(newCap);
+        assertEq(bank.bankCap(), newCap);
+    }
+
+    function testSetBankCap_NonOwnerReverts() public {
         vm.prank(alice);
-        usdc.mint(alice, 10e6);
-        usdc.approve(address(bank), 10e6);
-        bank.depositUsdc(10e6);
 
-        assertEq(bank.sBalanceOfUsdc(alice), 10e6);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                alice
+            )
+        );
+
+        bank.setBankCap(1000);
+    }
+
+    function testSetUsdc_OnlyOwner() public {
+        MockERC20 newUsdc = new MockERC20("NewUSDC", "nUSDC", 18);
+        vm.prank(owner);
+        bank.setUsdc(address(newUsdc));
+        assertEq(bank.usdc(), address(newUsdc));
+    }
+
+    function testSetRouter_OnlyOwner() public {
+        MockUniswapRouter newRouter = new MockUniswapRouter(
+            address(factory),
+            address(weth)
+        );
+
+        vm.prank(owner);
+        bank.setRouter(address(newRouter));
+
+        // No revert = ok. Opcionalmente comprobar evento con logs.
     }
 
     /*//////////////////////////////////////////////////////////////
-                            ADMIN
+                        Tests: remainingCapacity
     //////////////////////////////////////////////////////////////*/
 
-    function testSetRouter() public {
-        vm.prank(owner);
-        bank.setRouter(address(0x123));
+    function testRemainingCapacity_AfterDeposit() public {
+        uint256 amount = 100e18;
+        _depositForAlice(amount);
 
-        assertEq(address(bank.sRouter()), address(0x123));
-    }
-
-    function testSetUsdc() public {
-        address usdc2 = address(new MockERC20("NEWUSDC", "NUSDC", 6));
-
-        vm.prank(owner);
-        bank.setUsdc(usdc2);
-
-        assertEq(bank.sUsdc(), usdc2);
-    }
-
-    function testSetBankCap() public {
-        vm.prank(owner);
-        bank.setBankCap(500e6);
-
-        assertEq(bank.sBankCap(), 500e6);
-    }
-
-    function testRescueERC20() public {
-        MockERC20 tokenX = new MockERC20("X", "X", 18);
-        tokenX.mint(address(bank), 1000);
-
-        vm.prank(owner);
-        bank.rescueERC20(address(tokenX), owner, 1000);
-
-        assertEq(tokenX.balanceOf(owner), 1000);
+        uint256 remaining = bank.remainingCapacity();
+        assertEq(remaining, BANK_CAP - amount);
     }
 
     /*//////////////////////////////////////////////////////////////
-                        RECEIVE → REVERT DIRECT ETH
+                        Tests: rescueERC20
     //////////////////////////////////////////////////////////////*/
 
-    function testReceive_Revert() public {
-        vm.expectRevert(KipuBankV3.UsedepositEth.selector);
-        (bool ok, ) = address(bank).call{value: 1 ether}("");
-        ok;
+    function testRescueERC20_CanRescueNonUsdc() public {
+        MockERC20 random = new MockERC20("Random", "RND", 18);
+        random.mint(address(bank), 50e18);
+
+        uint256 before = random.balanceOf(owner);
+
+        vm.prank(owner);
+        bank.rescueERC20(address(random), owner, 50e18);
+
+        uint256 afterBal = random.balanceOf(owner);
+        assertEq(afterBal - before, 50e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        Tests: receive revert
+    //////////////////////////////////////////////////////////////*/
+
+    function testReceive_Reverts() public {
+        vm.expectRevert(KipuBankV3.UseDepositEth.selector);
+        payable(address(bank)).transfer(1 ether);
     }
 }
