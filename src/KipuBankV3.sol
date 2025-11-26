@@ -5,7 +5,7 @@ pragma solidity ^0.8.30;
 /// @notice Accepts native ETH and any ERC20 with a direct USDC pair on Uniswap V2, swaps to USDC, and credits user balances.
 /// @dev This version extends KipuBankV2 by integrating Uniswap V2 for token-to-USDC swaps, enforcing a global USDC-denominated cap, and maintaining non-custodial safety.
 /// @author Marcelo Walter Castellan
-/// @custom:date 2025-11-25
+/// @custom:date 2025-11-26
 /*
     Summary
 	    Users can deposit: ETH, USDC, or any ERC20 with a direct USDC pair
