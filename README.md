@@ -1,4 +1,15 @@
 # KipuBankV3
+[![Solidity](https://img.shields.io/badge/Solidity-^0.8.30-363636?style=flat-square&logo=solidity)](https://soliditylang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![OpenZeppelin](https://img.shields.io/badge/OpenZeppelin-5.0-4E5EE4?style=flat-square&logo=openzeppelin)](https://openzeppelin.com/)
+[![Uniswap V2](https://img.shields.io/badge/Uniswap-V2-ff007a?style=flat-square&logo=uniswap)](https://uniswap.org/)
+
+## Autor: Marcelo Walter Castellan  
+**Fecha:** 26/11/2025
+
+---
+
+## 📘 Descripción General
 
 KipuBankV3 es una versión evolucionada del protocolo KipuBankV2, orientada a un diseño más realista dentro del ecosistema DeFi.  
 Integra enrutamiento de swaps a través de Uniswap V2, soporta depósitos en ETH, tokens ERC-20 y USDC, aplica un tope global de liquidez (`bankCap`) denominado en USDC, y mantiene balances internos seguros y auditables.
