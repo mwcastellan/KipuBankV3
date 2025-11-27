@@ -9,7 +9,7 @@
 
 ---
 
-## 📘 Descripción General
+# 📘 Descripción General
 
 KipuBankV3 es una versión evolucionada del protocolo KipuBankV2, orientada a un diseño más realista dentro del ecosistema DeFi.  
 Integra enrutamiento de swaps a través de Uniswap V2, soporta depósitos en ETH, tokens ERC-20 y USDC, aplica un tope global de liquidez (`bankCap`) denominado en USDC, y mantiene balances internos seguros y auditables.
